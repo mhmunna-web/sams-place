@@ -58,7 +58,9 @@ function Gallery() {
     }
 
     setSession(currentSession);
+
     await loadGallery();
+
     setLoading(false);
   };
 
@@ -179,13 +181,11 @@ function Gallery() {
         setSuccess("Gallery image updated successfully.");
       } else {
         const { data: insertedGallery, error: insertError } =
-          await supabase.rpc("sp_add_gallery", {
-            p_title: payload.title,
-            p_image_url: payload.image_url,
-            p_description: payload.description,
-            p_sort_order: payload.sort_order,
-            p_is_active: payload.is_active,
-          });
+          await supabase
+            .from("sp_gallery")
+            .insert(payload)
+            .select()
+            .single();
 
         if (insertError) {
           throw insertError;
@@ -252,7 +252,10 @@ function Gallery() {
     setItems((current) =>
       current.map((galleryItem) =>
         galleryItem.id === item.id
-          ? { ...galleryItem, is_active: !item.is_active }
+          ? {
+              ...galleryItem,
+              is_active: !item.is_active,
+            }
           : galleryItem
       )
     );
@@ -298,6 +301,7 @@ function Gallery() {
 
     setDeleting(null);
     setSuccess("Gallery image deleted successfully.");
+
     setTimeout(() => setSuccess(""), 2500);
   };
 
@@ -318,6 +322,7 @@ function Gallery() {
         <div className="admin-topbar-left">
           <div className="admin-brand">
             <span className="admin-brand-mark">SP</span>
+
             <div>
               <strong>Sam&apos;s Place</strong>
               <span>Admin Dashboard</span>
@@ -329,9 +334,11 @@ function Gallery() {
           <a href="/" className="admin-topbar-link">
             View Website
           </a>
+
           <a href="/admin/dashboard" className="admin-topbar-link">
             Dashboard
           </a>
+
           <button
             type="button"
             className="admin-logout-button"
@@ -375,14 +382,6 @@ function Gallery() {
           >
             Gallery
           </a>
-
-          <a href="/admin/reservations" className="admin-sidebar-link">
-            Reservations
-          </a>
-
-          <a href="/admin/settings" className="admin-sidebar-link">
-            Settings
-          </a>
         </aside>
 
         <main className="admin-content">
@@ -391,7 +390,9 @@ function Gallery() {
               <span className="gallery-admin-eyebrow">
                 SAM&apos;S PLACE
               </span>
+
               <h1>Gallery</h1>
+
               <p>
                 Upload and manage the photos shown in the restaurant
                 website gallery.
@@ -422,6 +423,7 @@ function Gallery() {
                 <span className="gallery-small-label">
                   {editingId ? "EDIT IMAGE" : "NEW IMAGE"}
                 </span>
+
                 <h2>
                   {editingId
                     ? "Edit Gallery Image"
@@ -444,6 +446,7 @@ function Gallery() {
               <div className="gallery-form-grid">
                 <div className="gallery-field">
                   <label>Title</label>
+
                   <input
                     type="text"
                     placeholder="Example: Our Famous Breakfast"
@@ -459,6 +462,7 @@ function Gallery() {
 
                 <div className="gallery-field">
                   <label>Sort Order</label>
+
                   <input
                     type="number"
                     min="0"
@@ -471,6 +475,7 @@ function Gallery() {
                       })
                     }
                   />
+
                   <small>
                     Lower numbers appear first.
                   </small>
@@ -478,6 +483,7 @@ function Gallery() {
 
                 <div className="gallery-field gallery-field-wide">
                   <label>Description / Caption</label>
+
                   <textarea
                     rows="3"
                     placeholder="Short description for this photo..."
@@ -502,8 +508,8 @@ function Gallery() {
                   />
 
                   <small>
-                    Maximum 8MB. JPG, PNG, WEBP and other image formats
-                    are supported.
+                    Maximum 8MB. JPG, PNG, WEBP and other image
+                    formats are supported.
                   </small>
 
                   {imagePreview && (
@@ -529,9 +535,12 @@ function Gallery() {
                       })
                     }
                   />
+
                   <span></span>
+
                   <div>
                     <strong>Active</strong>
+
                     <small>
                       Show this image on the public website.
                     </small>
@@ -571,6 +580,7 @@ function Gallery() {
                 <span className="gallery-small-label">
                   GALLERY LIBRARY
                 </span>
+
                 <h2>All Images</h2>
               </div>
 
@@ -582,19 +592,28 @@ function Gallery() {
             {items.length === 0 ? (
               <div className="gallery-empty">
                 <div className="gallery-empty-icon">▧</div>
+
                 <h3>No gallery images yet</h3>
+
                 <p>
-                  Upload your first restaurant photo using the form above.
+                  Upload your first restaurant photo using the form
+                  above.
                 </p>
               </div>
             ) : (
               <div className="gallery-admin-grid">
                 {items.map((item) => (
-                  <article className="gallery-admin-card" key={item.id}>
+                  <article
+                    className="gallery-admin-card"
+                    key={item.id}
+                  >
                     <div className="gallery-admin-image">
                       <img
                         src={item.image_url}
-                        alt={item.title || "Sam's Place gallery"}
+                        alt={
+                          item.title ||
+                          "Sam's Place gallery"
+                        }
                       />
 
                       <span
@@ -604,7 +623,9 @@ function Gallery() {
                             : "gallery-status-inactive"
                         }`}
                       >
-                        {item.is_active ? "ACTIVE" : "HIDDEN"}
+                        {item.is_active
+                          ? "ACTIVE"
+                          : "HIDDEN"}
                       </span>
                     </div>
 
@@ -612,8 +633,10 @@ function Gallery() {
                       <div className="gallery-card-top">
                         <div>
                           <h3>
-                            {item.title || "Untitled Image"}
+                            {item.title ||
+                              "Untitled Image"}
                           </h3>
+
                           <span>
                             Order: {item.sort_order}
                           </span>
@@ -628,7 +651,9 @@ function Gallery() {
                         <button
                           type="button"
                           className="gallery-edit-button"
-                          onClick={() => startEdit(item)}
+                          onClick={() =>
+                            startEdit(item)
+                          }
                         >
                           Edit
                         </button>
@@ -636,16 +661,24 @@ function Gallery() {
                         <button
                           type="button"
                           className="gallery-active-button"
-                          onClick={() => toggleActive(item)}
+                          onClick={() =>
+                            toggleActive(item)
+                          }
                         >
-                          {item.is_active ? "Hide" : "Activate"}
+                          {item.is_active
+                            ? "Hide"
+                            : "Activate"}
                         </button>
 
                         <button
                           type="button"
                           className="gallery-delete-button"
-                          onClick={() => handleDelete(item)}
-                          disabled={deleting === item.id}
+                          onClick={() =>
+                            handleDelete(item)
+                          }
+                          disabled={
+                            deleting === item.id
+                          }
                         >
                           {deleting === item.id
                             ? "Deleting..."

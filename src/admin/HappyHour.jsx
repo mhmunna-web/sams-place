@@ -16,11 +16,14 @@ function HappyHour() {
   const [session, setSession] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
+
   const [editingId, setEditingId] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -33,7 +36,24 @@ function HappyHour() {
       data: { session },
     } = await supabase.auth.getSession();
 
-    if (!session) {
+    if (!session?.user) {
+      window.location.href = "/admin";
+      return;
+    }
+
+    const { data: adminUser, error: adminError } = await supabase
+      .from("sp_admin_users")
+      .select("id, role, is_active")
+      .eq("id", session.user.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (
+      adminError ||
+      !adminUser ||
+      adminUser.role !== "admin"
+    ) {
+      await supabase.auth.signOut();
       window.location.href = "/admin";
       return;
     }
@@ -53,6 +73,7 @@ function HappyHour() {
 
     if (error) {
       setError(error.message);
+      setItems([]);
     } else {
       setItems(data || []);
     }
@@ -81,12 +102,25 @@ function HappyHour() {
 
     if (!file) return;
 
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Image must be smaller than 8MB.");
+      return;
+    }
+
+    setError("");
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
   };
 
   const uploadImage = async () => {
-    if (!imageFile) return form.image_url || "";
+    if (!imageFile) {
+      return form.image_url || "";
+    }
 
     const safeName = imageFile.name
       .toLowerCase()
@@ -101,7 +135,9 @@ function HappyHour() {
         upsert: false,
       });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      throw uploadError;
+    }
 
     const { data } = supabase.storage
       .from("food-images")
@@ -112,6 +148,7 @@ function HappyHour() {
 
   const handleSave = async (event) => {
     event.preventDefault();
+
     setSaving(true);
     setMessage("");
     setError("");
@@ -129,7 +166,7 @@ function HappyHour() {
         start_time: form.start_time || null,
         end_time: form.end_time || null,
         image_url: imageUrl || null,
-        is_active: form.is_active,
+        is_active: Boolean(form.is_active),
       };
 
       if (editingId) {
@@ -138,7 +175,9 @@ function HappyHour() {
           .update(payload)
           .eq("id", editingId);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          throw updateError;
+        }
 
         setMessage("Happy Hour updated successfully.");
       } else {
@@ -146,15 +185,23 @@ function HappyHour() {
           .from("sp_happy_hours")
           .insert(payload);
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          throw insertError;
+        }
 
         setMessage("Happy Hour created successfully.");
       }
 
       resetForm();
       await loadItems();
+
+      setTimeout(() => {
+        setMessage("");
+      }, 3000);
     } catch (err) {
-      setError(err.message || "Unable to save Happy Hour.");
+      setError(
+        err.message || "Unable to save Happy Hour."
+      );
     } finally {
       setSaving(false);
     }
@@ -166,8 +213,12 @@ function HappyHour() {
     setForm({
       title: item.title || "",
       description: item.description || "",
-      start_time: item.start_time ? item.start_time.slice(0, 5) : "",
-      end_time: item.end_time ? item.end_time.slice(0, 5) : "",
+      start_time: item.start_time
+        ? item.start_time.slice(0, 5)
+        : "",
+      end_time: item.end_time
+        ? item.end_time.slice(0, 5)
+        : "",
       image_url: item.image_url || "",
       is_active: item.is_active !== false,
     });
@@ -187,7 +238,9 @@ function HappyHour() {
 
     const { error: updateError } = await supabase
       .from("sp_happy_hours")
-      .update({ is_active: !item.is_active })
+      .update({
+        is_active: !item.is_active,
+      })
       .eq("id", item.id);
 
     if (updateError) {
@@ -202,11 +255,15 @@ function HappyHour() {
     );
 
     await loadItems();
+
+    setTimeout(() => {
+      setMessage("");
+    }, 2500);
   };
 
   const handleDelete = async (item) => {
     const confirmed = window.confirm(
-      `Delete "${item.title}" permanently?`
+      `Delete "${item.title}" permanently?\n\nThis cannot be undone.`
     );
 
     if (!confirmed) return;
@@ -224,8 +281,17 @@ function HappyHour() {
       return;
     }
 
+    if (editingId === item.id) {
+      resetForm();
+    }
+
     setMessage("Happy Hour deleted.");
+
     await loadItems();
+
+    setTimeout(() => {
+      setMessage("");
+    }, 2500);
   };
 
   const handleLogout = async () => {
@@ -233,13 +299,30 @@ function HappyHour() {
     window.location.href = "/admin";
   };
 
-  if (!session) return null;
+  if (loading) {
+    return (
+      <div className="admin-dashboard-loading">
+        <div>
+          <h2>Sam's Place</h2>
+          <p>Loading Happy Hour...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
 
   return (
     <div className="admin-page">
+      {/* TOP BAR */}
       <header className="admin-topbar">
         <div className="admin-brand">
-          <div className="admin-brand-mark">SP</div>
+          <div className="admin-brand-mark">
+            SP
+          </div>
+
           <div>
             <strong>Sam's Place</strong>
             <span>Admin Dashboard</span>
@@ -247,40 +330,75 @@ function HappyHour() {
         </div>
 
         <div className="admin-topbar-actions">
-          <a href="/" target="_blank" rel="noopener noreferrer">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             View Website
           </a>
-          <a href="/admin/dashboard">Dashboard</a>
-          <button type="button" onClick={handleLogout}>
+
+          <a href="/admin/dashboard">
+            Dashboard
+          </a>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+          >
             Logout
           </button>
         </div>
       </header>
 
       <div className="admin-layout">
+        {/* SIDEBAR */}
         <aside className="admin-sidebar">
-          <p className="admin-sidebar-label">MANAGEMENT</p>
+          <p className="admin-sidebar-label">
+            MANAGEMENT
+          </p>
 
-          <a href="/admin/dashboard">Dashboard</a>
-          <a href="/admin/menu">Menu</a>
-          <a href="/admin/offers">Offers</a>
-          <a href="/admin/happy-hour" className="active">
+          <a href="/admin/dashboard">
+            Dashboard
+          </a>
+
+          <a href="/admin/menu">
+            Menu
+          </a>
+
+          <a href="/admin/offers">
+            Offers
+          </a>
+
+          <a
+            href="/admin/happy-hour"
+            className="active"
+          >
             Happy Hour
           </a>
-          <a href="/admin/advertising">Advertising</a>
-          <a href="/admin/gallery">Gallery</a>
-          <a href="/admin/reservations">Reservations</a>
-          <a href="/admin/settings">Settings</a>
+
+          <a href="/admin/advertising">
+            Advertising
+          </a>
+
+          <a href="/admin/gallery">
+            Gallery
+          </a>
         </aside>
 
+        {/* MAIN */}
         <main className="admin-content">
           <div className="hh-page-header">
             <div>
-              <p className="hh-eyebrow">SAM'S PLACE</p>
+              <p className="hh-eyebrow">
+                SAM'S PLACE
+              </p>
+
               <h1>Happy Hour</h1>
+
               <p>
-                Manage the Happy Hour banner shown on the restaurant
-                website.
+                Manage the Happy Hour banner shown on
+                the restaurant website.
               </p>
             </div>
 
@@ -290,14 +408,27 @@ function HappyHour() {
             </div>
           </div>
 
-          {message && <div className="hh-message success">{message}</div>}
-          {error && <div className="hh-message error">{error}</div>}
+          {message && (
+            <div className="hh-message success">
+              {message}
+            </div>
+          )}
 
+          {error && (
+            <div className="hh-message error">
+              {error}
+            </div>
+          )}
+
+          {/* FORM */}
           <section className="hh-form-card">
             <div className="hh-form-heading">
               <p className="hh-eyebrow">
-                {editingId ? "EDIT HAPPY HOUR" : "NEW HAPPY HOUR"}
+                {editingId
+                  ? "EDIT HAPPY HOUR"
+                  : "NEW HAPPY HOUR"}
               </p>
+
               <h2>
                 {editingId
                   ? "Update Happy Hour"
@@ -307,8 +438,12 @@ function HappyHour() {
 
             <form onSubmit={handleSave}>
               <div className="hh-form-grid">
+                {/* TITLE */}
                 <div className="hh-field hh-field-wide">
-                  <label htmlFor="title">Title</label>
+                  <label htmlFor="title">
+                    Title
+                  </label>
+
                   <input
                     id="title"
                     name="title"
@@ -319,8 +454,12 @@ function HappyHour() {
                   />
                 </div>
 
+                {/* START TIME */}
                 <div className="hh-field">
-                  <label htmlFor="start_time">Start Time</label>
+                  <label htmlFor="start_time">
+                    Start Time
+                  </label>
+
                   <input
                     id="start_time"
                     name="start_time"
@@ -330,8 +469,12 @@ function HappyHour() {
                   />
                 </div>
 
+                {/* END TIME */}
                 <div className="hh-field">
-                  <label htmlFor="end_time">End Time</label>
+                  <label htmlFor="end_time">
+                    End Time
+                  </label>
+
                   <input
                     id="end_time"
                     name="end_time"
@@ -341,10 +484,12 @@ function HappyHour() {
                   />
                 </div>
 
+                {/* DESCRIPTION */}
                 <div className="hh-field hh-field-full">
                   <label htmlFor="description">
                     Description
                   </label>
+
                   <textarea
                     id="description"
                     name="description"
@@ -355,8 +500,12 @@ function HappyHour() {
                   />
                 </div>
 
+                {/* IMAGE */}
                 <div className="hh-field hh-field-full">
-                  <label htmlFor="image">Happy Hour Image</label>
+                  <label htmlFor="image">
+                    Happy Hour Image
+                  </label>
+
                   <input
                     id="image"
                     type="file"
@@ -365,8 +514,8 @@ function HappyHour() {
                   />
 
                   <p className="hh-help">
-                    JPG, PNG, WEBP and other common image formats are
-                    supported.
+                    JPG, PNG, WEBP and other common image
+                    formats are supported. Maximum 8MB.
                   </p>
 
                   {imagePreview && (
@@ -379,6 +528,7 @@ function HappyHour() {
                   )}
                 </div>
 
+                {/* ACTIVE */}
                 <div className="hh-active-row">
                   <label className="hh-switch-label">
                     <input
@@ -387,11 +537,15 @@ function HappyHour() {
                       checked={form.is_active}
                       onChange={handleChange}
                     />
+
                     <span className="hh-switch"></span>
+
                     <span>
                       <strong>Active</strong>
+
                       <small>
-                        Show this Happy Hour on the public website.
+                        Show this Happy Hour on the public
+                        website.
                       </small>
                     </span>
                   </label>
@@ -425,29 +579,44 @@ function HappyHour() {
             </form>
           </section>
 
+          {/* LIBRARY */}
           <section className="hh-library">
             <div className="hh-library-heading">
               <div>
-                <p className="hh-eyebrow">HAPPY HOUR LIBRARY</p>
-                <h2>All Happy Hours</h2>
+                <p className="hh-eyebrow">
+                  HAPPY HOUR LIBRARY
+                </p>
+
+                <h2>
+                  All Happy Hours
+                </h2>
               </div>
-              <span>{items.length} total</span>
+
+              <span>
+                {items.length} total
+              </span>
             </div>
 
-            {loading ? (
-              <div className="hh-empty-card">Loading...</div>
-            ) : items.length === 0 ? (
+            {items.length === 0 ? (
               <div className="hh-empty-card">
-                <h3>No Happy Hour entries yet.</h3>
+                <h3>
+                  No Happy Hour entries yet.
+                </h3>
+
                 <p>
-                  Add your first Happy Hour above and it will be
-                  available to display on the website.
+                  Add your first Happy Hour above and it
+                  will be available to display on the
+                  website.
                 </p>
               </div>
             ) : (
               <div className="hh-cards">
                 {items.map((item) => (
-                  <article className="hh-card" key={item.id}>
+                  <article
+                    className="hh-card"
+                    key={item.id}
+                  >
+                    {/* IMAGE */}
                     <div className="hh-card-image">
                       {item.image_url ? (
                         <img
@@ -467,21 +636,30 @@ function HappyHour() {
                             : "hh-status"
                         }
                       >
-                        {item.is_active ? "ACTIVE" : "HIDDEN"}
+                        {item.is_active
+                          ? "ACTIVE"
+                          : "HIDDEN"}
                       </span>
                     </div>
 
+                    {/* CONTENT */}
                     <div className="hh-card-body">
-                      <h3>{item.title}</h3>
+                      <h3>
+                        {item.title}
+                      </h3>
 
-                      {(item.start_time || item.end_time) && (
+                      {(item.start_time ||
+                        item.end_time) && (
                         <div className="hh-card-time">
                           {item.start_time
                             ? item.start_time.slice(0, 5)
                             : ""}
-                          {item.start_time && item.end_time
+
+                          {item.start_time &&
+                          item.end_time
                             ? " — "
                             : ""}
+
                           {item.end_time
                             ? item.end_time.slice(0, 5)
                             : ""}
@@ -489,13 +667,17 @@ function HappyHour() {
                       )}
 
                       {item.description && (
-                        <p>{item.description}</p>
+                        <p>
+                          {item.description}
+                        </p>
                       )}
 
                       <div className="hh-card-actions">
                         <button
                           type="button"
-                          onClick={() => handleEdit(item)}
+                          onClick={() =>
+                            handleEdit(item)
+                          }
                         >
                           Edit
                         </button>
@@ -503,15 +685,21 @@ function HappyHour() {
                         <button
                           type="button"
                           className="hh-hide-button"
-                          onClick={() => handleToggle(item)}
+                          onClick={() =>
+                            handleToggle(item)
+                          }
                         >
-                          {item.is_active ? "Hide" : "Show"}
+                          {item.is_active
+                            ? "Hide"
+                            : "Show"}
                         </button>
 
                         <button
                           type="button"
                           className="hh-delete-button"
-                          onClick={() => handleDelete(item)}
+                          onClick={() =>
+                            handleDelete(item)
+                          }
                         >
                           Delete
                         </button>

@@ -1,14 +1,210 @@
 import { useEffect, useState } from "react";
+import { supabase } from "./lib/supabaseClient";
 import "./App.css";
 import "./happy-hour-public.css";
 import "./advertising-public.css";
-import { supabase } from "./lib/supabaseClient";
 
 const ORDER_URL =
   "https://order.toasttab.com/online/sams-place-1545-s-novato-blvd";
 
+/*
+  EMERGENCY OFFLINE MODE
+  -----------------------
+  This version does not depend on Supabase, so the public website can load
+  even while the Supabase project endpoint is unavailable.
+
+  The menu data below is based on the current public Sam's Place ordering menu.
+  Images remain optional; the existing UI shows a clean placeholder when an
+  image is not available.
+*/
+
+const makeItem = (
+  id,
+  name,
+  price,
+  description = "",
+  image = ""
+) => ({
+  id,
+  name,
+  price,
+  description,
+  image_url: image ? `/images/menu/${image}` : "",
+  order_url: ORDER_URL,
+});
+
+const offlineMenu = [
+  {
+    id: "breakfast",
+    name: "Breakfast",
+    items: [
+      makeItem("b1", "Classic Breakfast", 15.95, "Two eggs, your choice of crispy hash browns or country potatoes, and fresh locally made bread."),
+      makeItem("b2", "Two Eggs with Bacon", 18.95, "Two eggs with four slices of thick-cut bacon, potatoes, and fresh bread."),
+      makeItem("b3", "Two Eggs with Sausage", 18.95, "Two eggs with sausage links, potatoes, and fresh bread."),
+      makeItem("b4", "Two Eggs with Ham", 18.95, "Two eggs with a thick-cut house ham steak, potatoes, and fresh bread."),
+      makeItem("b5", "Country Breakfast", 18.95, "Fresh biscuit topped with homemade country sausage gravy, two eggs, and potatoes."),
+      makeItem("b6", "Fresh Corned Beef Hash and Eggs", 20.95, "House-cooked corned beef with potatoes, onions, and bell peppers, served with eggs and toast."),
+      makeItem("b7", "Sam's Scramble", 20.95, "Scrambled eggs with fresh ground beef, mushrooms, spinach, and onions."),
+      makeItem("b8", "Steak and Eggs", 22.95, "10 oz. New York steak with two eggs and your choice of potatoes."),
+      makeItem("b9", "Chicken Apple Sausage", 19.95, "Chicken-apple sausage served with two eggs and potatoes."),
+      makeItem("b10", "Linguica and Eggs", 19.95, "Portuguese linguica sausage with two eggs and potatoes."),
+      makeItem("b11", "Chorizo and Eggs", 19.95, "Spicy Mexican chorizo with eggs, potatoes, and fresh pico de gallo."),
+      makeItem("b12", "Huevos Rancheros", 19.95, "Corn tortillas, black beans, eggs, Jack cheese, jalapenos, and pico de gallo."),
+      makeItem("b13", "Chicken Fried Steak and Eggs", 19.95, "Breaded beef patty with country sausage gravy and two eggs."),
+      makeItem("b14", "Breakfast Sandwich", 18.95, "Two eggs, bacon, mayonnaise, melted cheese, and potatoes on toasted sourdough."),
+      makeItem("b15", "Breakfast Quesadilla", 21.95, "Flour tortilla with scrambled eggs, mushrooms, tomatoes, onions, and cheese."),
+      makeItem("b16", "Breakfast Burrito", 19.95, "Smoked ham, scrambled eggs, pico de gallo, and cheddar in a flour tortilla."),
+      makeItem("b17", "Pancakes (Full)", 15.95, "Three fluffy pancakes served with butter and syrup."),
+      makeItem("b18", "French Toast", 15.95, "Thick-cut Texas toast dipped in signature egg batter and grilled golden."),
+      makeItem("b19", "Short Stack", 11.95, "A stack of fluffy pancakes served with butter and syrup."),
+      makeItem("b20", "Half Waffle", 7.95, "Half of a golden Belgian waffle with butter and syrup."),
+      makeItem("b21", "Full Waffle", 15.95, "Full golden Belgian waffle with butter and syrup."),
+    ],
+  },
+  {
+    id: "lunch",
+    name: "Lunch",
+    items: [
+      makeItem("l1", "Cup Soup of the Day", 6.25, "Homemade soup of the day, prepared fresh daily."),
+      makeItem("l2", "Bowl Soup of the Day", 9.25, "A bowl of our homemade soup of the day."),
+      makeItem("l3", "House Salad", 7.95, "Fresh greens, tomatoes, cucumbers, carrots, and red onions with homemade dressing."),
+      makeItem("l4", "Caesar Salad", 15.95, "Crisp romaine, Parmesan, croutons, and homemade Caesar dressing."),
+      makeItem("l5", "Chicken Caesar Salad", 21.95, "Grilled chicken, romaine, Parmesan, and croutons with Caesar dressing."),
+      makeItem("l6", "Cobb Salad", 21.95, "Mixed greens, blue cheese, eggs, turkey, bacon, tomatoes, cucumbers, and avocado."),
+      makeItem("l7", "Hamburger", 17.95, "Fresh 1/3 lb Angus chuck patty with classic toppings and your choice of side."),
+      makeItem("l8", "Cheese Burger", 18.95, "Fresh 1/3 lb Angus chuck patty with melted cheese and your choice of side."),
+      makeItem("l9", "Giant Burger", 20.95, "Fresh 1/2 lb Angus chuck patty with cheddar cheese and classic toppings."),
+      makeItem("l10", "Novato Burger", 20.95, "Angus patty with mushrooms, grilled onions, melted cheese, and chipotle aioli."),
+      makeItem("l11", "Sourdough Burger", 18.95, "Angus patty with mayonnaise, lettuce, tomato, and onion on French roll."),
+      makeItem("l12", "Veggie Burger", 17.95, "Black bean patty with classic toppings and your choice of side."),
+      makeItem("l13", "Patty Melt", 17.95, "Angus patty with cheddar and grilled onions on grilled rye."),
+      makeItem("l14", "Turkey Burger", 17.95, "Turkey patty with mayonnaise, lettuce, tomato, and onions."),
+      makeItem("l15", "Pulled Pork Sandwich", 17.95, "Roasted pulled pork marinated in BBQ sauce with coleslaw."),
+      makeItem("l16", "Fish and Chips Lunch", 17.95, "House-breaded Icelandic cod with French fries and coleslaw."),
+      makeItem("l17", "Chicken Strips Wrap", 17.95, "Crispy chicken strips with lettuce, tomato, avocado, and ranch."),
+      makeItem("l18", "Beef Burrito", 17.95, "Roasted beef, seasoned rice, beans, salsa, avocado, and sour cream."),
+      makeItem("l19", "Chicken Burrito", 17.95, "Grilled chicken, seasoned rice, beans, salsa, avocado, and sour cream."),
+      makeItem("l20", "The Reuben", 19.95, "Corned beef, sauerkraut, Swiss cheese, and Thousand Island dressing on grilled rye."),
+      makeItem("l21", "Fresh Turkey Sandwich", 18.95, "Thinly sliced turkey with mayonnaise, lettuce, tomato, and your choice of side."),
+      makeItem("l22", "French Dip", 18.95, "House-roasted beef on a fresh sourdough French roll with au jus."),
+      makeItem("l23", "The Club Sandwich", 19.95, "Roasted turkey, honey-smoked bacon, mayonnaise, tomatoes, and lettuce on sourdough."),
+      makeItem("l24", "BLT", 17.95, "Honey-smoked bacon, crisp lettuce, mayonnaise, and fresh tomato."),
+      makeItem("l25", "Steak Sandwich", 21.95, "10 oz. New York steak with grilled mushrooms and onions on a French roll."),
+      makeItem("l26", "Tuna Sandwich", 17.95, "Homemade tuna salad with lettuce, tomato, and mayonnaise."),
+      makeItem("l27", "Grilled Cheese Sandwich", 13.95, "Melted cheese on locally baked grilled sourdough."),
+      makeItem("l28", "Mozzarella Sticks", 14.95, "Crispy mozzarella sticks."),
+      makeItem("l29", "Chicken Strips", 14.95, "Crispy chicken strips."),
+      makeItem("l30", "Onion Rings", 6.95, "Crispy golden onion rings."),
+      makeItem("l31", "Potato Wedges", 7.95, "Crispy seasoned potato wedges."),
+    ],
+  },
+  {
+    id: "dinner",
+    name: "Dinner",
+    items: [
+      makeItem("d1", "Turkey Dinner Plate", 25.95, "Fresh turkey with homemade mashed potatoes and vegetables, or your choice of two sides."),
+      makeItem("d2", "Roast Beef Dinner Plate", 25.95, "Fresh roast beef with mashed potatoes and vegetables, or your choice of two sides."),
+      makeItem("d3", "Corned Beef Dinner", 25.95, "Fresh corned beef with mashed potatoes and vegetables, or your choice of two sides."),
+      makeItem("d4", "Fish and Chips Dinner", 25.95, "Fresh Icelandic cod with French fries and coleslaw."),
+      makeItem("d5", "Grilled Salmon", 27.95, "Wild salmon with lemon-garlic caper sauce, mashed potatoes, and vegetables."),
+      makeItem("d6", "Filet of Sole", 27.95, "Grilled filet with lemon-garlic butter sauce, mashed potatoes, and vegetables."),
+      makeItem("d7", "Chicken Parmesan", 25.95, "Breaded chicken breast with homemade marinara and melted cheese."),
+      makeItem("d8", "Chicken Piccata", 25.95, "Grilled chicken breast with lemon-garlic caper sauce."),
+      makeItem("d9", "Chicken Marsala", 25.95, "Grilled chicken breast served with marsala sauce."),
+      makeItem("d10", "Buttermilk Fried Chicken", 25.95, "Crispy buttermilk-marinated chicken with mashed potatoes and coleslaw."),
+      makeItem("d11", "Chicken Fried Steak", 25.95, "Two crispy beef chicken-fried steaks with homemade country gravy."),
+      makeItem("d12", "Half BBQ Pork Ribs", 21.95, "St. Louis-style pork ribs with BBQ sauce, fries, and coleslaw."),
+      makeItem("d13", "Full BBQ Pork Ribs", 27.95, "St. Louis-style pork ribs with BBQ sauce, fries, and coleslaw."),
+      makeItem("d14", "New York Steak", 27.95, "10 oz. fresh-cut New York steak with mashed potatoes and vegetables."),
+      makeItem("d15", "Mayan Camarones", 27.95, "Prawns with chipotle, onions, garlic, and sour cream, served with rice and beans."),
+      makeItem("d16", "Bistek Carabenia", 25.95, "Grilled beef with grilled onion, avocado, rice, beans, and salad."),
+      makeItem("d17", "Salisbury Steak", 25.95, "Ground-beef steak with grilled onions, mushrooms, and homemade gravy."),
+      makeItem("d18", "Fettuccini", 19.95, "Fresh pasta with your choice of homemade Alfredo or marinara sauce."),
+      makeItem("d19", "Fettuccini Carbonara", 21.95, "Fresh fettuccine with creamy Parmesan sauce, bacon, and garlic."),
+      makeItem("d20", "Fettuccini Pesto", 21.95, "Fresh fettuccine with basil pesto and Parmesan."),
+      makeItem("d21", "Spaghetti Meat Balls", 23.95, "Fresh spaghetti with homemade marinara and Italian meatballs."),
+      makeItem("d22", "Seafood Pasta", 26.95, "Shrimp, fish, and calamari with your choice of fresh sauce."),
+    ],
+  },
+  {
+    id: "additional",
+    name: "Additional Menu",
+    items: [
+      makeItem("a1", "Sweet Potato Bowl", 17.95, "Roasted sweet potatoes, seasoned ground beef, cottage cheese, black beans, and avocado."),
+      makeItem("a2", "Ahi Tuna Poke Bowl", 18.95, "Fresh ahi tuna over rice with cucumber, avocado, green onions, sesame, and poke sauce."),
+      makeItem("a3", "Beans Salad", 21.95, "Fresh greens with seasoned beans, avocado, cucumber, tomato, and egg."),
+      makeItem("a4", "Pulled Pork Skillet", 18.95, "Pulled pork, red potatoes, peppers, onions, cheddar, and two eggs."),
+      makeItem("a5", "Fresh Fruit Plate", 14.95, "Fresh blueberries, banana, mango, yellow melon, and orange slices."),
+      makeItem("a6", "Crispy Fried Chicken Sandwich", 17.95, "Crispy fried chicken with lettuce, tomato, sauce, and fries."),
+    ],
+  },
+  {
+    id: "kids",
+    name: "Kid's Menu",
+    items: [
+      makeItem("k1", "Kids Bacon with 1 Egg & Toast", 10.95, "One egg with crispy bacon and your choice of toast."),
+      makeItem("k2", "Kids Sausage with 1 Egg & Toast", 10.95, "One egg with sausage and your choice of toast."),
+      makeItem("k3", "Kids 1 Pancake with 1 Bacon & 1 Egg", 10.95, "One pancake with bacon and one egg."),
+      makeItem("k4", "Kids 1 Pancake with 1 Sausage & 1 Egg", 10.95, "One pancake with sausage and one egg."),
+      makeItem("k5", "Kids 1 French Toast with 1 Bacon & 1 Egg", 10.95, "French toast with bacon and one egg."),
+      makeItem("k6", "Kids Hot Dog with French Fries", 11.95, "All-beef hot dog served with crispy French fries."),
+      makeItem("k7", "Kids Grilled Cheese with French Fries", 11.95, "Grilled cheese sandwich with French fries."),
+      makeItem("k8", "Kids Hamburger with French Fries", 11.95, "Angus beef hamburger served with French fries."),
+      makeItem("k9", "Kids Spaghetti with Butter & Cheese", 11.95, "Spaghetti tossed with butter and Parmesan."),
+      makeItem("k10", "Kids Chicken Strips with French Fries", 11.95, "Two crispy chicken strips served with French fries."),
+      makeItem("k11", "Kids Soda", 2.95),
+      makeItem("k12", "Kids Milk", 3.95),
+      makeItem("k13", "Kids Juice", 3.95),
+      makeItem("k14", "Kids Hot Chocolate", 3.95),
+      makeItem("k15", "Milkshake", 4.95),
+    ],
+  },
+  {
+    id: "dessert",
+    name: "Dessert",
+    items: [
+      makeItem("ds1", "Homemade Flan", 6.50, "Traditional homemade egg flan with rich caramel sauce."),
+      makeItem("ds2", "Homemade Rice Pudding", 6.95, "Creamy homemade rice pudding with cinnamon and raisins."),
+      makeItem("ds3", "Apple Pie", 6.50),
+      makeItem("ds4", "Pecan Pie", 6.50),
+      makeItem("ds5", "Lemon Meringue Pie", 6.50),
+      makeItem("ds6", "Chocolate Sundae", 9.50, "Vanilla ice cream with chocolate sauce, whipped cream, and a cherry."),
+    ],
+  },
+  {
+    id: "beverage",
+    name: "Beverage",
+    items: [
+      makeItem("bv1", "Coffee", 4.25, "Freshly brewed coffee with free refills for dine-in."),
+      makeItem("bv2", "Hot Tea", 4.25),
+      makeItem("bv3", "Hot Chocolate", 4.75),
+      makeItem("bv4", "Ice Tea", 4.25),
+      makeItem("bv5", "Pepsi", 4.25),
+      makeItem("bv6", "Diet Pepsi", 4.25),
+      makeItem("bv7", "Dr Pepper", 4.25),
+      makeItem("bv8", "Root Beer", 4.25),
+      makeItem("bv9", "Starry", 4.25),
+      makeItem("bv10", "Pink Lemonade", 4.25),
+      makeItem("bv11", "Sparkling Water", 4.25),
+      makeItem("bv12", "Milk", 4.95),
+      makeItem("bv13", "Fresh Squeezed Orange Juice - Large", 7.50),
+      makeItem("bv14", "Fresh Squeezed Orange Juice - Small", 5.25),
+      makeItem("bv15", "Apple Juice - Large", 6.25),
+      makeItem("bv16", "Apple Juice - Small", 4.25),
+      makeItem("bv17", "Cranberry Juice - Large", 6.25),
+      makeItem("bv18", "Cranberry Juice - Small", 4.25),
+      makeItem("bv19", "Vanilla Milkshake", 7.95),
+      makeItem("bv20", "Chocolate Milkshake", 7.95),
+      makeItem("bv21", "Strawberry Milkshake", 7.95),
+      makeItem("bv22", "OREO Milkshake", 7.95),
+      makeItem("bv23", "Chocolate Peanut Butter Milkshake", 8.50),
+      makeItem("bv24", "Banana Malted Milkshake", 9.50),
+    ],
+  },
+];
+
 function App() {
-  const [menuCategories, setMenuCategories] = useState([]);
+  const [menuCategories, setMenuCategories] = useState(offlineMenu);
   const [advertisement, setAdvertisement] = useState(null);
   const [happyHour, setHappyHour] = useState(null);
   const [offer, setOffer] = useState(null);
@@ -25,112 +221,92 @@ function App() {
     setMenuError("");
 
     try {
-      const [
-        categoriesResult,
-        itemsResult,
-        advertisementResult,
-        happyHourResult,
-        galleryResult,
-      ] = await Promise.all([
-        supabase
-          .from("sp_categories")
-          .select("*")
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true })
-          .order("name", { ascending: true }),
+      const [categoriesResult, itemsResult, adsResult, happyHourResult, offersResult, galleryResult] =
+        await Promise.all([
+          supabase
+            .from("sp_categories")
+            .select("*")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("sp_menu_items")
+            .select("*")
+            .eq("is_available", true)
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("sp_advertisements")
+            .select("*")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("sp_happy_hours")
+            .select("*")
+            .eq("is_active", true)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("sp_offers")
+            .select("*")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("sp_gallery")
+            .select("*")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: false }),
+        ]);
 
-        supabase
-          .from("sp_menu_items")
-          .select("*")
-          .eq("is_available", true)
-          .order("sort_order", { ascending: true })
-          .order("created_at", { ascending: true }),
+      const firstError = [
+        categoriesResult.error,
+        itemsResult.error,
+        adsResult.error,
+        happyHourResult.error,
+        offersResult.error,
+        galleryResult.error,
+      ].find(Boolean);
 
-        supabase
-          .from("sp_advertisements")
-          .select("*")
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true })
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-
-        supabase
-          .from("sp_happy_hours")
-          .select("*")
-          .eq("is_active", true)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-
-        supabase
-          .from("sp_gallery")
-          .select("*")
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true })
-          .order("created_at", { ascending: true }),
-      ]);
-
-      if (categoriesResult.error) {
-        throw categoriesResult.error;
-      }
-
-      if (itemsResult.error) {
-        throw itemsResult.error;
-      }
-
-      if (advertisementResult.error) {
-        throw advertisementResult.error;
-      }
-
-      if (happyHourResult.error) {
-        throw happyHourResult.error;
-      }
-
-      if (galleryResult.error) {
-        throw galleryResult.error;
+      if (firstError) {
+        console.error("Public content loading error:", firstError);
+        setMenuError("Unable to load live menu data. Showing the saved menu instead.");
+        setMenuCategories(offlineMenu);
+        return;
       }
 
       const categories = categoriesResult.data || [];
       const items = itemsResult.data || [];
 
-      const formattedCategories = categories.map((category) => ({
-        ...category,
-        items: items.filter(
-          (item) => item.category_id === category.id
-        ),
+      const liveCategories = categories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        items: items.filter((item) => item.category_id === category.id),
       }));
 
-      setMenuCategories(formattedCategories);
-
-      setAdvertisement(advertisementResult.data || null);
-      setHappyHour(happyHourResult.data || null);
-      setGalleryImages(galleryResult.data || []);
-
-      // Load the active public offer separately so an offer/RLS issue
-      // never prevents the menu, advertising, or Happy Hour from loading.
-      const { data: offersData, error: offersError } = await supabase
-        .from("sp_offers")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: false });
-
-      if (offersError) {
-        console.error("PUBLIC OFFERS ERROR:", offersError);
-        setOffer(null);
+      if (liveCategories.length > 0) {
+        setMenuCategories(liveCategories);
       } else {
-        // The Admin "Active" switch controls whether the offer is shown.
-        // Start/end dates are displayed as offer information and do not
-        // prevent an active offer from appearing on the public website.
-        setOffer((offersData || [])[0] || null);
+        setMenuCategories(offlineMenu);
       }
-    } catch (error) {
-      console.error("PUBLIC CONTENT ERROR:", error);
 
-      setMenuError(
-        error.message || "Unable to load menu right now."
-      );
+      setAdvertisement(adsResult.data?.[0] || null);
+      setHappyHour(happyHourResult.data?.[0] || null);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const currentOffer = (offersResult.data || []).find((item) => {
+        const starts = !item.start_date || item.start_date <= today;
+        const ends = !item.end_date || item.end_date >= today;
+        return starts && ends;
+      });
+
+      setOffer(currentOffer || null);
+      setGalleryImages(galleryResult.data || []);
+    } catch (error) {
+      console.error("Unexpected public content error:", error);
+      setMenuError("Unable to load live menu data. Showing the saved menu instead.");
+      setMenuCategories(offlineMenu);
     } finally {
       setMenuLoading(false);
     }
@@ -721,11 +897,8 @@ function App() {
           )}
 
           {!menuLoading && menuError && (
-            <div className="menu-category-list">
-              <div className="menu-category">
-                <div className="menu-category-heading"><h3>Menu unavailable</h3></div>
-                <div className="menu-category-empty"><p>We are unable to load the menu right now.</p></div>
-              </div>
+            <div className="menu-live-notice">
+              {menuError}
             </div>
           )}
 

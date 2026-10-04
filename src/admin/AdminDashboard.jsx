@@ -8,7 +8,8 @@ export default function AdminDashboard() {
 
   const [menuCount, setMenuCount] = useState(0);
   const [advertisingCount, setAdvertisingCount] = useState(0);
-  const [reservationCount, setReservationCount] = useState(0);
+  const [offerCount, setOfferCount] = useState(0);
+  const [happyHourCount, setHappyHourCount] = useState(0);
   const [galleryCount, setGalleryCount] = useState(0);
 
   useEffect(() => {
@@ -50,7 +51,8 @@ export default function AdminDashboard() {
       const [
         menuResult,
         advertisingResult,
-        reservationResult,
+        offerResult,
+        happyHourResult,
         galleryResult,
       ] = await Promise.all([
         supabase
@@ -62,7 +64,11 @@ export default function AdminDashboard() {
           .select("id", { count: "exact", head: true }),
 
         supabase
-          .from("sp_reservations")
+          .from("sp_offers")
+          .select("id", { count: "exact", head: true }),
+
+        supabase
+          .from("sp_happy_hours")
           .select("id", { count: "exact", head: true }),
 
         supabase
@@ -72,7 +78,8 @@ export default function AdminDashboard() {
 
       setMenuCount(menuResult.count || 0);
       setAdvertisingCount(advertisingResult.count || 0);
-      setReservationCount(reservationResult.count || 0);
+      setOfferCount(offerResult.count || 0);
+      setHappyHourCount(happyHourResult.count || 0);
       setGalleryCount(galleryResult.count || 0);
     } catch (error) {
       console.error("Dashboard stats error:", error);
@@ -97,15 +104,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="admin-dashboard">
-
-      {/* =====================================================
-          SIDEBAR
-      ===================================================== */}
-
+      {/* SIDEBAR */}
       <aside className="admin-sidebar">
-
         <div className="admin-sidebar-brand">
-
           <div className="admin-sidebar-logo">
             SAM'S PLACE
           </div>
@@ -113,14 +114,9 @@ export default function AdminDashboard() {
           <div className="admin-sidebar-label">
             ADMIN PANEL
           </div>
-
         </div>
 
-
         <nav className="admin-sidebar-nav">
-
-          {/* DASHBOARD */}
-
           <a
             href="/admin/dashboard"
             className="admin-nav-item active"
@@ -128,9 +124,6 @@ export default function AdminDashboard() {
             <span>▣</span>
             Dashboard
           </a>
-
-
-          {/* MENU */}
 
           <a
             href="/admin/menu"
@@ -140,20 +133,6 @@ export default function AdminDashboard() {
             Menu
           </a>
 
-
-          {/* CATEGORIES */}
-
-          <a
-            href="/admin/categories"
-            className="admin-nav-item"
-          >
-            <span>▤</span>
-            Categories
-          </a>
-
-
-          {/* OFFERS */}
-
           <a
             href="/admin/offers"
             className="admin-nav-item"
@@ -161,9 +140,6 @@ export default function AdminDashboard() {
             <span>🏷</span>
             Offers
           </a>
-
-
-          {/* HAPPY HOUR */}
 
           <a
             href="/admin/happy-hour"
@@ -173,9 +149,6 @@ export default function AdminDashboard() {
             Happy Hour
           </a>
 
-
-          {/* ADVERTISING */}
-
           <a
             href="/admin/advertising"
             className="admin-nav-item"
@@ -184,9 +157,6 @@ export default function AdminDashboard() {
             Advertising
           </a>
 
-
-          {/* GALLERY */}
-
           <a
             href="/admin/gallery"
             className="admin-nav-item"
@@ -194,44 +164,16 @@ export default function AdminDashboard() {
             <span>🖼</span>
             Gallery
           </a>
-
-
-          {/* RESERVATIONS */}
-
-          <a
-            href="/admin/reservations"
-            className="admin-nav-item"
-          >
-            <span>📅</span>
-            Reservations
-          </a>
-
-
-          {/* SETTINGS */}
-
-          <a
-            href="/admin/settings"
-            className="admin-nav-item"
-          >
-            <span>⚙</span>
-            Settings
-          </a>
-
         </nav>
 
-
         {/* SIDEBAR BOTTOM */}
-
         <div className="admin-sidebar-bottom">
-
           <div className="admin-user-box">
-
             <div className="admin-user-avatar">
               {admin?.full_name?.charAt(0)?.toUpperCase() || "A"}
             </div>
 
             <div>
-
               <strong>
                 {admin?.full_name || "Admin"}
               </strong>
@@ -239,11 +181,8 @@ export default function AdminDashboard() {
               <span>
                 Administrator
               </span>
-
             </div>
-
           </div>
-
 
           <button
             className="admin-logout-button"
@@ -251,24 +190,14 @@ export default function AdminDashboard() {
           >
             Sign Out
           </button>
-
         </div>
-
       </aside>
 
-
-      {/* =====================================================
-          MAIN
-      ===================================================== */}
-
+      {/* MAIN */}
       <main className="admin-main">
-
         {/* TOP BAR */}
-
         <header className="admin-topbar">
-
           <div>
-
             <div className="admin-breadcrumb">
               Sam's Place / Admin
             </div>
@@ -276,9 +205,7 @@ export default function AdminDashboard() {
             <h1>
               Dashboard
             </h1>
-
           </div>
-
 
           <a
             href="/"
@@ -288,18 +215,11 @@ export default function AdminDashboard() {
           >
             View Website ↗
           </a>
-
         </header>
 
-
-        {/* =====================================================
-            WELCOME
-        ===================================================== */}
-
+        {/* WELCOME */}
         <section className="admin-welcome">
-
           <div>
-
             <p className="admin-eyebrow">
               SAM'S PLACE
             </p>
@@ -309,34 +229,25 @@ export default function AdminDashboard() {
             </h2>
 
             <p>
-              Manage your restaurant website, menu, advertising,
-              offers, gallery and reservations from one place.
+              Manage your restaurant website, menu,
+              advertising, offers, gallery and Happy Hour
+              from one place.
             </p>
-
           </div>
-
         </section>
 
-
-        {/* =====================================================
-            STATS
-        ===================================================== */}
-
+        {/* STATS */}
         <section className="admin-stat-grid">
-
           {/* MENU */}
-
           <a
             href="/admin/menu"
             className="admin-stat-card"
           >
-
             <span className="admin-stat-icon">
               🍽
             </span>
 
             <div>
-
               <p>
                 Menu Items
               </p>
@@ -344,25 +255,19 @@ export default function AdminDashboard() {
               <h3>
                 {menuCount}
               </h3>
-
             </div>
-
           </a>
 
-
           {/* ADVERTISING */}
-
           <a
             href="/admin/advertising"
             className="admin-stat-card"
           >
-
             <span className="admin-stat-icon">
               📢
             </span>
 
             <div>
-
               <p>
                 Advertising
               </p>
@@ -370,51 +275,59 @@ export default function AdminDashboard() {
               <h3>
                 {advertisingCount}
               </h3>
-
             </div>
-
           </a>
 
-
-          {/* RESERVATIONS */}
-
+          {/* OFFERS */}
           <a
-            href="/admin/reservations"
+            href="/admin/offers"
             className="admin-stat-card"
           >
-
             <span className="admin-stat-icon">
-              📅
+              🏷
             </span>
 
             <div>
-
               <p>
-                Reservations
+                Offers
               </p>
 
               <h3>
-                {reservationCount}
+                {offerCount}
               </h3>
-
             </div>
-
           </a>
 
+          {/* HAPPY HOUR */}
+          <a
+            href="/admin/happy-hour"
+            className="admin-stat-card"
+          >
+            <span className="admin-stat-icon">
+              🎉
+            </span>
+
+            <div>
+              <p>
+                Happy Hour
+              </p>
+
+              <h3>
+                {happyHourCount}
+              </h3>
+            </div>
+          </a>
 
           {/* GALLERY */}
-
           <a
             href="/admin/gallery"
             className="admin-stat-card"
           >
-
             <span className="admin-stat-icon">
               🖼
             </span>
 
             <div>
-
               <p>
                 Gallery Images
               </p>
@@ -422,24 +335,14 @@ export default function AdminDashboard() {
               <h3>
                 {galleryCount}
               </h3>
-
             </div>
-
           </a>
-
         </section>
 
-
-        {/* =====================================================
-            MANAGEMENT
-        ===================================================== */}
-
+        {/* MANAGEMENT */}
         <section className="admin-content-card">
-
           <div className="admin-content-card-header">
-
             <div>
-
               <p className="admin-eyebrow">
                 WEBSITE MANAGEMENT
               </p>
@@ -447,23 +350,15 @@ export default function AdminDashboard() {
               <h2>
                 Restaurant Management
               </h2>
-
             </div>
-
           </div>
 
-
           <div className="admin-quick-grid">
-
-            {/* =================================================
-                MENU
-            ================================================= */}
-
+            {/* MENU */}
             <a
               href="/admin/menu"
               className="admin-quick-card"
             >
-
               <span>
                 🍽
               </span>
@@ -473,22 +368,16 @@ export default function AdminDashboard() {
               </h3>
 
               <p>
-                Add, edit and remove food items,
+                Add categories and manage food items,
                 prices, descriptions and images.
               </p>
-
             </a>
 
-
-            {/* =================================================
-                ADVERTISING
-            ================================================= */}
-
+            {/* ADVERTISING */}
             <a
               href="/admin/advertising"
               className="admin-quick-card"
             >
-
               <span>
                 📢
               </span>
@@ -501,19 +390,13 @@ export default function AdminDashboard() {
                 Create large promotional banners,
                 food advertisements and Order Now campaigns.
               </p>
-
             </a>
 
-
-            {/* =================================================
-                OFFERS
-            ================================================= */}
-
+            {/* OFFERS */}
             <a
               href="/admin/offers"
               className="admin-quick-card"
             >
-
               <span>
                 🏷
               </span>
@@ -526,19 +409,13 @@ export default function AdminDashboard() {
                 Manage promotions, discounts and
                 special restaurant offers.
               </p>
-
             </a>
 
-
-            {/* =================================================
-                HAPPY HOUR
-            ================================================= */}
-
+            {/* HAPPY HOUR */}
             <a
               href="/admin/happy-hour"
               className="admin-quick-card"
             >
-
               <span>
                 🎉
               </span>
@@ -551,44 +428,13 @@ export default function AdminDashboard() {
                 Upload and manage your Happy Hour
                 banner and information.
               </p>
-
             </a>
 
-
-            {/* =================================================
-                RESERVATIONS
-            ================================================= */}
-
-            <a
-              href="/admin/reservations"
-              className="admin-quick-card"
-            >
-
-              <span>
-                📅
-              </span>
-
-              <h3>
-                Reservations
-              </h3>
-
-              <p>
-                View and manage customer reservation
-                requests.
-              </p>
-
-            </a>
-
-
-            {/* =================================================
-                GALLERY
-            ================================================= */}
-
+            {/* GALLERY */}
             <a
               href="/admin/gallery"
               className="admin-quick-card"
             >
-
               <span>
                 🖼
               </span>
@@ -601,40 +447,10 @@ export default function AdminDashboard() {
                 Manage restaurant photos and
                 gallery images.
               </p>
-
             </a>
-
-
-            {/* =================================================
-                SETTINGS
-            ================================================= */}
-
-            <a
-              href="/admin/settings"
-              className="admin-quick-card"
-            >
-
-              <span>
-                ⚙
-              </span>
-
-              <h3>
-                Settings
-              </h3>
-
-              <p>
-                Manage restaurant information,
-                contact details and website settings.
-              </p>
-
-            </a>
-
           </div>
-
         </section>
-
       </main>
-
     </div>
   );
 }

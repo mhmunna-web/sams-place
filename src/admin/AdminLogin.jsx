@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { supabase } from "../lib/supabaseClient";
-import "./admin.css";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
@@ -14,51 +14,30 @@ export default function AdminLogin() {
     setError("");
     setLoading(true);
 
-    const { data, error: loginError } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
 
-    if (loginError) {
-      setError(loginError.message);
-      setLoading(false);
-      return;
-    }
+      // Login successful
+      window.location.href = "/admin/dashboard";
+    } catch (loginError) {
+      console.error("Firebase login error:", loginError);
 
-    if (!data?.user) {
-      setError("Login failed. Please try again.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: adminUser, error: adminError } = await supabase
-      .from("sp_admin_users")
-      .select("id, full_name, role, is_active")
-      .eq("id", data.user.id)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (adminError) {
-      setError(adminError.message);
-      await supabase.auth.signOut();
-      setLoading(false);
-      return;
-    }
-
-    if (!adminUser) {
-      await supabase.auth.signOut();
-
-      setError(
-        "You do not have permission to access the Sam's Place Admin Panel."
-      );
+      if (
+        loginError.code === "auth/invalid-credential" ||
+        loginError.code === "auth/wrong-password" ||
+        loginError.code === "auth/user-not-found"
+      ) {
+        setError("Invalid email or password.");
+      } else if (loginError.code === "auth/too-many-requests") {
+        setError("Too many login attempts. Please try again later.");
+      } else if (loginError.code === "auth/network-request-failed") {
+        setError("Network error. Please check your internet connection.");
+      } else {
+        setError(loginError.message || "Login failed. Please try again.");
+      }
 
       setLoading(false);
-      return;
     }
-
-    // Login successful
-    window.location.href = "/admin/dashboard";
   };
 
   return (

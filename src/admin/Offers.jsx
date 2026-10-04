@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import "./offers.css";
+import "./Offers.css";
 
 const EMPTY_FORM = {
   title: "",

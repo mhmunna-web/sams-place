@@ -224,6 +224,7 @@ export default function MenuManagement() {
 
       const payload = {
         name: form.name.trim(),
+        slug: makeSlug(form.name),
         description: form.description.trim(),
         price: Number(form.price),
         category_id: form.category_id,
@@ -247,7 +248,10 @@ export default function MenuManagement() {
       } else {
         const { error: insertError } = await supabase
           .from("sp_menu_items")
-          .insert(payload);
+          .insert({
+            ...payload,
+            slug: `${payload.slug}-${crypto.randomUUID().slice(0, 8)}`,
+          });
 
         if (insertError) {
           throw insertError;
