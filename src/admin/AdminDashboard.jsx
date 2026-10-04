@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { collection, getDocs } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
+
 import "./admin.css";
 
 export default function AdminDashboard() {
@@ -13,82 +16,69 @@ export default function AdminDashboard() {
   const [galleryCount, setGalleryCount] = useState(0);
 
   useEffect(() => {
-    checkAdmin();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = "/admin";
+        return;
+      }
+
+      setAdmin({
+        id: user.uid,
+        full_name: user.displayName || user.email?.split("@")[0] || "Admin",
+        email: user.email || "",
+        role: "Administrator",
+      });
+
+      await loadDashboardStats();
+
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const checkAdmin = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.user) {
-      window.location.href = "/admin";
-      return;
+  const getCollectionCount = async (collectionName) => {
+    try {
+      const snapshot = await getDocs(collection(db, collectionName));
+      return snapshot.size;
+    } catch (error) {
+      console.warn(
+        `Could not load ${collectionName}:`,
+        error.message
+      );
+      return 0;
     }
-
-    const { data: adminUser, error } = await supabase
-      .from("sp_admin_users")
-      .select("id, full_name, role, is_active")
-      .eq("id", session.user.id)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (error || !adminUser) {
-      await supabase.auth.signOut();
-      window.location.href = "/admin";
-      return;
-    }
-
-    setAdmin(adminUser);
-
-    await loadDashboardStats();
-
-    setLoading(false);
   };
 
   const loadDashboardStats = async () => {
-    try {
-      const [
-        menuResult,
-        advertisingResult,
-        offerResult,
-        happyHourResult,
-        galleryResult,
-      ] = await Promise.all([
-        supabase
-          .from("sp_menu_items")
-          .select("id", { count: "exact", head: true }),
+    const [
+      menu,
+      advertising,
+      offers,
+      happyHour,
+      gallery,
+    ] = await Promise.all([
+      getCollectionCount("menu_items"),
+      getCollectionCount("advertisements"),
+      getCollectionCount("offers"),
+      getCollectionCount("happy_hours"),
+      getCollectionCount("gallery"),
+    ]);
 
-        supabase
-          .from("sp_advertisements")
-          .select("id", { count: "exact", head: true }),
-
-        supabase
-          .from("sp_offers")
-          .select("id", { count: "exact", head: true }),
-
-        supabase
-          .from("sp_happy_hours")
-          .select("id", { count: "exact", head: true }),
-
-        supabase
-          .from("sp_gallery")
-          .select("id", { count: "exact", head: true }),
-      ]);
-
-      setMenuCount(menuResult.count || 0);
-      setAdvertisingCount(advertisingResult.count || 0);
-      setOfferCount(offerResult.count || 0);
-      setHappyHourCount(happyHourResult.count || 0);
-      setGalleryCount(galleryResult.count || 0);
-    } catch (error) {
-      console.error("Dashboard stats error:", error);
-    }
+    setMenuCount(menu);
+    setAdvertisingCount(advertising);
+    setOfferCount(offers);
+    setHappyHourCount(happyHour);
+    setGalleryCount(gallery);
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/admin";
+    try {
+      await signOut(auth);
+      window.location.href = "/admin";
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
   if (loading) {
@@ -104,8 +94,10 @@ export default function AdminDashboard() {
 
   return (
     <div className="admin-dashboard">
+
       {/* SIDEBAR */}
       <aside className="admin-sidebar">
+
         <div className="admin-sidebar-brand">
           <div className="admin-sidebar-logo">
             SAM'S PLACE
@@ -117,6 +109,7 @@ export default function AdminDashboard() {
         </div>
 
         <nav className="admin-sidebar-nav">
+
           <a
             href="/admin/dashboard"
             className="admin-nav-item active"
@@ -164,11 +157,14 @@ export default function AdminDashboard() {
             <span>🖼</span>
             Gallery
           </a>
+
         </nav>
 
         {/* SIDEBAR BOTTOM */}
         <div className="admin-sidebar-bottom">
+
           <div className="admin-user-box">
+
             <div className="admin-user-avatar">
               {admin?.full_name?.charAt(0)?.toUpperCase() || "A"}
             </div>
@@ -182,6 +178,7 @@ export default function AdminDashboard() {
                 Administrator
               </span>
             </div>
+
           </div>
 
           <button
@@ -190,14 +187,19 @@ export default function AdminDashboard() {
           >
             Sign Out
           </button>
+
         </div>
+
       </aside>
 
       {/* MAIN */}
       <main className="admin-main">
+
         {/* TOP BAR */}
         <header className="admin-topbar">
+
           <div>
+
             <div className="admin-breadcrumb">
               Sam's Place / Admin
             </div>
@@ -205,6 +207,7 @@ export default function AdminDashboard() {
             <h1>
               Dashboard
             </h1>
+
           </div>
 
           <a
@@ -215,11 +218,14 @@ export default function AdminDashboard() {
           >
             View Website ↗
           </a>
+
         </header>
 
         {/* WELCOME */}
         <section className="admin-welcome">
+
           <div>
+
             <p className="admin-eyebrow">
               SAM'S PLACE
             </p>
@@ -233,11 +239,14 @@ export default function AdminDashboard() {
               advertising, offers, gallery and Happy Hour
               from one place.
             </p>
+
           </div>
+
         </section>
 
         {/* STATS */}
         <section className="admin-stat-grid">
+
           {/* MENU */}
           <a
             href="/admin/menu"
@@ -256,6 +265,7 @@ export default function AdminDashboard() {
                 {menuCount}
               </h3>
             </div>
+
           </a>
 
           {/* ADVERTISING */}
@@ -276,6 +286,7 @@ export default function AdminDashboard() {
                 {advertisingCount}
               </h3>
             </div>
+
           </a>
 
           {/* OFFERS */}
@@ -296,6 +307,7 @@ export default function AdminDashboard() {
                 {offerCount}
               </h3>
             </div>
+
           </a>
 
           {/* HAPPY HOUR */}
@@ -316,6 +328,7 @@ export default function AdminDashboard() {
                 {happyHourCount}
               </h3>
             </div>
+
           </a>
 
           {/* GALLERY */}
@@ -336,13 +349,18 @@ export default function AdminDashboard() {
                 {galleryCount}
               </h3>
             </div>
+
           </a>
+
         </section>
 
         {/* MANAGEMENT */}
         <section className="admin-content-card">
+
           <div className="admin-content-card-header">
+
             <div>
+
               <p className="admin-eyebrow">
                 WEBSITE MANAGEMENT
               </p>
@@ -350,10 +368,13 @@ export default function AdminDashboard() {
               <h2>
                 Restaurant Management
               </h2>
+
             </div>
+
           </div>
 
           <div className="admin-quick-grid">
+
             {/* MENU */}
             <a
               href="/admin/menu"
@@ -371,6 +392,7 @@ export default function AdminDashboard() {
                 Add categories and manage food items,
                 prices, descriptions and images.
               </p>
+
             </a>
 
             {/* ADVERTISING */}
@@ -390,6 +412,7 @@ export default function AdminDashboard() {
                 Create large promotional banners,
                 food advertisements and Order Now campaigns.
               </p>
+
             </a>
 
             {/* OFFERS */}
@@ -409,6 +432,7 @@ export default function AdminDashboard() {
                 Manage promotions, discounts and
                 special restaurant offers.
               </p>
+
             </a>
 
             {/* HAPPY HOUR */}
@@ -428,6 +452,7 @@ export default function AdminDashboard() {
                 Upload and manage your Happy Hour
                 banner and information.
               </p>
+
             </a>
 
             {/* GALLERY */}
@@ -447,10 +472,15 @@ export default function AdminDashboard() {
                 Manage restaurant photos and
                 gallery images.
               </p>
+
             </a>
+
           </div>
+
         </section>
+
       </main>
+
     </div>
   );
 }
