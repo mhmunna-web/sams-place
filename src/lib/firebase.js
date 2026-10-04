@@ -4,7 +4,7 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA79vS098Tr4Z13MiXqsNlVMfHZjwV9Y0",
+  apiKey: "AIzaSyA79vs098Tr4Z13MiXqsNIVMHfZjvWB9Y0",
   authDomain: "sams-place-emergency.firebaseapp.com",
   projectId: "sams-place-emergency",
   storageBucket: "sams-place-emergency.firebasestorage.app",
