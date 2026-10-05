@@ -1,5 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { auth, db, storage } from "../lib/firebase";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import {
+  getDownloadURL,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
 import "./menu.css";
 
 const DEFAULT_ORDER_URL =
@@ -55,39 +69,83 @@ export default function MenuManagement() {
     setLoading(true);
     setError("");
 
-    const [categoriesResult, itemsResult] = await Promise.all([
-      supabase
-        .from("sp_categories")
-        .select("*")
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true }),
+    try {
+      const [categoriesSnapshot, itemsSnapshot] =
+        await Promise.all([
+          getDocs(collection(db, "categories")),
+          getDocs(collection(db, "menu_items")),
+        ]);
 
-      supabase
-        .from("sp_menu_items")
-        .select("*")
-        .order("created_at", { ascending: false }),
-    ]);
+      const categoriesData = categoriesSnapshot.docs.map(
+        (categoryDoc) => ({
+          id: categoryDoc.id,
+          ...categoryDoc.data(),
+        })
+      );
 
-    if (categoriesResult.error) {
-      setError(categoriesResult.error.message);
+      const itemsData = itemsSnapshot.docs.map(
+        (itemDoc) => ({
+          id: itemDoc.id,
+          ...itemDoc.data(),
+        })
+      );
+
+      // Keep the same sorting behavior as the old Supabase version.
+      categoriesData.sort((a, b) => {
+        const sortA = Number(a.sort_order ?? 0);
+        const sortB = Number(b.sort_order ?? 0);
+
+        if (sortA !== sortB) {
+          return sortA - sortB;
+        }
+
+        return String(a.name || "").localeCompare(
+          String(b.name || "")
+        );
+      });
+
+      // Keep newest food items first.
+      itemsData.sort((a, b) => {
+        const getTime = (value) => {
+          if (!value) return 0;
+
+          if (typeof value?.toMillis === "function") {
+            return value.toMillis();
+          }
+
+          if (value?.seconds) {
+            return value.seconds * 1000;
+          }
+
+          const parsed = new Date(value).getTime();
+
+          return Number.isNaN(parsed) ? 0 : parsed;
+        };
+
+        return (
+          getTime(b.created_at) -
+          getTime(a.created_at)
+        );
+      });
+
+      setCategories(categoriesData);
+      setItems(itemsData);
+    } catch (loadError) {
+      console.error("Menu load error:", loadError);
+
+      setError(
+        loadError.message ||
+          "Unable to load menu data."
+      );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (itemsResult.error) {
-      setError(itemsResult.error.message);
-      setLoading(false);
-      return;
-    }
-
-    setCategories(categoriesResult.data || []);
-    setItems(itemsResult.data || []);
-
-    setLoading(false);
   };
 
   const activeCategories = useMemo(() => {
-    return categories.filter((category) => category.is_active);
+    return categories.filter(
+      (category) => category.is_active
+    );
   }, [categories]);
 
   const filteredItems = useMemo(() => {
@@ -96,7 +154,8 @@ export default function MenuManagement() {
     }
 
     return items.filter(
-      (item) => item.category_id === selectedCategory
+      (item) =>
+        item.category_id === selectedCategory
     );
   }, [items, selectedCategory]);
 
@@ -131,9 +190,11 @@ export default function MenuManagement() {
       description: item.description || "",
       price: item.price ?? "",
       category_id: item.category_id || "",
-      order_url: item.order_url || DEFAULT_ORDER_URL,
+      order_url:
+        item.order_url || DEFAULT_ORDER_URL,
       image_url: item.image_url || "",
-      is_available: item.is_available ?? true,
+      is_available:
+        item.is_available ?? true,
     });
 
     setImageFile(null);
@@ -176,24 +237,34 @@ export default function MenuManagement() {
       .replace(/[^a-zA-Z0-9.-]/g, "-")
       .toLowerCase();
 
-    const filePath = `menu/${crypto.randomUUID()}-${safeName}`;
+    const randomId =
+      typeof crypto !== "undefined" &&
+      crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("food-images")
-      .upload(filePath, imageFile, {
+    const filePath = `menu/${randomId}-${safeName}`;
+
+    const storageRef = ref(
+      storage,
+      filePath
+    );
+
+    await uploadBytes(
+      storageRef,
+      imageFile,
+      {
+        contentType: imageFile.type,
         cacheControl: "3600",
-        upsert: false,
-      });
+      }
+    );
 
-    if (uploadError) {
-      throw uploadError;
-    }
+    const publicUrl =
+      await getDownloadURL(storageRef);
 
-    const { data } = supabase.storage
-      .from("food-images")
-      .getPublicUrl(filePath);
-
-    return data.publicUrl;
+    return publicUrl;
   };
 
   const handleSave = async (event) => {
@@ -212,8 +283,19 @@ export default function MenuManagement() {
       return;
     }
 
-    if (form.price === "" || Number(form.price) < 0) {
+    if (
+      form.price === "" ||
+      Number(form.price) < 0
+    ) {
       setError("Please enter a valid price.");
+      return;
+    }
+
+    // Make sure the user is logged in before writing.
+    if (!auth.currentUser) {
+      setError(
+        "You must be logged in as an admin."
+      );
       return;
     }
 
@@ -225,39 +307,58 @@ export default function MenuManagement() {
       const payload = {
         name: form.name.trim(),
         slug: makeSlug(form.name),
-        description: form.description.trim(),
+        description:
+          form.description.trim(),
         price: Number(form.price),
         category_id: form.category_id,
         order_url:
-          form.order_url.trim() || DEFAULT_ORDER_URL,
+          form.order_url.trim() ||
+          DEFAULT_ORDER_URL,
         image_url: imageUrl || null,
         is_available: form.is_available,
+        updated_at: serverTimestamp(),
       };
 
       if (editingId) {
-        const { error: updateError } = await supabase
-          .from("sp_menu_items")
-          .update(payload)
-          .eq("id", editingId);
+        const itemRef = doc(
+          db,
+          "menu_items",
+          editingId
+        );
 
-        if (updateError) {
-          throw updateError;
-        }
+        await updateDoc(
+          itemRef,
+          payload
+        );
 
-        setSuccess("Food item updated successfully.");
+        setSuccess(
+          "Food item updated successfully."
+        );
       } else {
-        const { error: insertError } = await supabase
-          .from("sp_menu_items")
-          .insert({
+        const randomId =
+          typeof crypto !== "undefined" &&
+          crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2)}`;
+
+        await addDoc(
+          collection(db, "menu_items"),
+          {
             ...payload,
-            slug: `${payload.slug}-${crypto.randomUUID().slice(0, 8)}`,
-          });
+            slug: `${payload.slug}-${randomId.slice(
+              0,
+              8
+            )}`,
+            created_at:
+              serverTimestamp(),
+          }
+        );
 
-        if (insertError) {
-          throw insertError;
-        }
-
-        setSuccess("Food item added successfully.");
+        setSuccess(
+          "Food item added successfully."
+        );
       }
 
       await loadData();
@@ -267,8 +368,14 @@ export default function MenuManagement() {
         setSuccess("");
       }, 3000);
     } catch (saveError) {
+      console.error(
+        "Menu save error:",
+        saveError
+      );
+
       setError(
-        saveError.message || "Something went wrong."
+        saveError.message ||
+          "Something went wrong."
       );
     } finally {
       setSaving(false);
@@ -282,62 +389,93 @@ export default function MenuManagement() {
 
     if (!confirmed) return;
 
+    if (!auth.currentUser) {
+      setError(
+        "You must be logged in as an admin."
+      );
+      return;
+    }
+
     setDeleting(item.id);
     setError("");
     setSuccess("");
 
-    const { error: deleteError } = await supabase
-      .from("sp_menu_items")
-      .delete()
-      .eq("id", item.id);
+    try {
+      await deleteDoc(
+        doc(db, "menu_items", item.id)
+      );
 
-    if (deleteError) {
-      setError(deleteError.message);
+      setItems((current) =>
+        current.filter(
+          (food) => food.id !== item.id
+        )
+      );
+
+      if (editingId === item.id) {
+        resetForm();
+      }
+
+      setSuccess(
+        "Food item deleted."
+      );
+
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (deleteError) {
+      console.error(
+        "Menu delete error:",
+        deleteError
+      );
+
+      setError(
+        deleteError.message ||
+          "Unable to delete food item."
+      );
+    } finally {
       setDeleting(null);
-      return;
     }
-
-    setItems((current) =>
-      current.filter((food) => food.id !== item.id)
-    );
-
-    if (editingId === item.id) {
-      resetForm();
-    }
-
-    setSuccess("Food item deleted.");
-
-    setTimeout(() => {
-      setSuccess("");
-    }, 3000);
-
-    setDeleting(null);
   };
 
   const handleAddCategory = async (event) => {
     event.preventDefault();
 
-    const categoryName = newCategory.trim();
+    const categoryName =
+      newCategory.trim();
 
     if (!categoryName) {
-      setError("Category name is required.");
+      setError(
+        "Category name is required."
+      );
+      return;
+    }
+
+    if (!auth.currentUser) {
+      setError(
+        "You must be logged in as an admin."
+      );
       return;
     }
 
     setError("");
     setSuccess("");
 
-    const slug = makeSlug(categoryName);
+    const slug =
+      makeSlug(categoryName);
 
-    const duplicate = categories.some(
-      (category) =>
-        category.slug === slug ||
-        category.name.toLowerCase() ===
-          categoryName.toLowerCase()
-    );
+    const duplicate =
+      categories.some(
+        (category) =>
+          category.slug === slug ||
+          String(category.name || "")
+            .toLowerCase() ===
+            categoryName.toLowerCase()
+      );
 
     if (duplicate) {
-      setError("This category already exists.");
+      setError(
+        "This category already exists."
+      );
       return;
     }
 
@@ -345,89 +483,152 @@ export default function MenuManagement() {
       categories.length > 0
         ? Math.max(
             ...categories.map(
-              (category) => category.sort_order || 0
+              (category) =>
+                Number(
+                  category.sort_order || 0
+                )
             )
           ) + 1
         : 0;
 
-    const { data, error: categoryError } = await supabase
-      .from("sp_categories")
-      .insert({
+    try {
+      const categoryRef =
+        await addDoc(
+          collection(db, "categories"),
+          {
+            name: categoryName,
+            slug,
+            sort_order:
+              nextSortOrder,
+            is_active: true,
+            created_at:
+              serverTimestamp(),
+            updated_at:
+              serverTimestamp(),
+          }
+        );
+
+      const newCategoryData = {
+        id: categoryRef.id,
         name: categoryName,
         slug,
-        sort_order: nextSortOrder,
+        sort_order:
+          nextSortOrder,
         is_active: true,
-      })
-      .select()
-      .single();
+      };
 
-    if (categoryError) {
-      setError(categoryError.message);
+      setCategories(
+        (current) => [
+          ...current,
+          newCategoryData,
+        ]
+      );
+
+      setNewCategory("");
+      setShowCategoryForm(false);
+
+      setForm((current) => ({
+        ...current,
+        category_id:
+          current.category_id ||
+          categoryRef.id,
+      }));
+
+      setSuccess(
+        "Category added successfully."
+      );
+
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (categoryError) {
+      console.error(
+        "Category add error:",
+        categoryError
+      );
+
+      setError(
+        categoryError.message ||
+          "Unable to add category."
+      );
+    }
+  };
+
+  const handleToggleCategory = async (
+    category
+  ) => {
+    if (!auth.currentUser) {
+      setError(
+        "You must be logged in as an admin."
+      );
       return;
     }
 
-    setCategories((current) => [...current, data]);
-
-    setNewCategory("");
-    setShowCategoryForm(false);
-
-    setForm((current) => ({
-      ...current,
-      category_id:
-        current.category_id || data.id,
-    }));
-
-    setSuccess("Category added successfully.");
-
-    setTimeout(() => {
-      setSuccess("");
-    }, 3000);
-  };
-
-  const handleToggleCategory = async (category) => {
     setError("");
     setSuccess("");
 
-    const newStatus = !category.is_active;
+    const newStatus =
+      !category.is_active;
 
-    const { error: updateError } = await supabase
-      .from("sp_categories")
-      .update({
-        is_active: newStatus,
-      })
-      .eq("id", category.id);
+    try {
+      await updateDoc(
+        doc(
+          db,
+          "categories",
+          category.id
+        ),
+        {
+          is_active: newStatus,
+          updated_at:
+            serverTimestamp(),
+        }
+      );
 
-    if (updateError) {
-      setError(updateError.message);
-      return;
+      setCategories((current) =>
+        current.map((item) =>
+          item.id === category.id
+            ? {
+                ...item,
+                is_active:
+                  newStatus,
+              }
+            : item
+        )
+      );
+
+      setSuccess(
+        `${category.name} is now ${
+          newStatus
+            ? "active"
+            : "inactive"
+        }.`
+      );
+
+      setTimeout(() => {
+        setSuccess("");
+      }, 2500);
+    } catch (updateError) {
+      console.error(
+        "Category update error:",
+        updateError
+      );
+
+      setError(
+        updateError.message ||
+          "Unable to update category."
+      );
     }
-
-    setCategories((current) =>
-      current.map((item) =>
-        item.id === category.id
-          ? {
-              ...item,
-              is_active: newStatus,
-            }
-          : item
-      )
-    );
-
-    setSuccess(
-      `${category.name} is now ${
-        newStatus ? "active" : "inactive"
-      }.`
-    );
-
-    setTimeout(() => {
-      setSuccess("");
-    }, 2500);
   };
 
-  const handleDeleteCategory = async (category) => {
-    const itemCount = items.filter(
-      (item) => item.category_id === category.id
-    ).length;
+  const handleDeleteCategory = async (
+    category
+  ) => {
+    const itemCount =
+      items.filter(
+        (item) =>
+          item.category_id ===
+          category.id
+      ).length;
 
     if (itemCount > 0) {
       setError(
@@ -436,42 +637,71 @@ export default function MenuManagement() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete category "${category.name}"?`
-    );
+    const confirmed =
+      window.confirm(
+        `Delete category "${category.name}"?`
+      );
 
     if (!confirmed) return;
 
-    const { error: deleteError } = await supabase
-      .from("sp_categories")
-      .delete()
-      .eq("id", category.id);
-
-    if (deleteError) {
-      setError(deleteError.message);
+    if (!auth.currentUser) {
+      setError(
+        "You must be logged in as an admin."
+      );
       return;
     }
 
-    setCategories((current) =>
-      current.filter((item) => item.id !== category.id)
-    );
+    try {
+      await deleteDoc(
+        doc(
+          db,
+          "categories",
+          category.id
+        )
+      );
 
-    if (selectedCategory === category.id) {
-      setSelectedCategory("all");
+      setCategories((current) =>
+        current.filter(
+          (item) =>
+            item.id !== category.id
+        )
+      );
+
+      if (
+        selectedCategory ===
+        category.id
+      ) {
+        setSelectedCategory("all");
+      }
+
+      if (
+        form.category_id ===
+        category.id
+      ) {
+        setForm((current) => ({
+          ...current,
+          category_id: "",
+        }));
+      }
+
+      setSuccess(
+        "Category deleted."
+      );
+
+      setTimeout(() => {
+        setSuccess("");
+      }, 3000);
+    } catch (deleteError) {
+      console.error(
+        "Category delete error:",
+        deleteError
+      );
+
+      setError(
+        deleteError.message ||
+          "Unable to delete category."
+      );
     }
-
-    if (form.category_id === category.id) {
-      setForm((current) => ({
-        ...current,
-        category_id: "",
-      }));
-    }
-
-    setSuccess("Category deleted.");
-
-    setTimeout(() => {
-      setSuccess("");
-    }, 3000);
   };
 
   if (loading) {
@@ -576,7 +806,9 @@ export default function MenuManagement() {
                 placeholder="Category name"
                 value={newCategory}
                 onChange={(event) =>
-                  setNewCategory(event.target.value)
+                  setNewCategory(
+                    event.target.value
+                  )
                 }
               />
 
@@ -609,76 +841,87 @@ export default function MenuManagement() {
 
           </button>
 
-          {categories.map((category) => {
+          {categories.map(
+            (category) => {
 
-            const count = items.filter(
-              (item) =>
-                item.category_id === category.id
-            ).length;
+              const count =
+                items.filter(
+                  (item) =>
+                    item.category_id ===
+                    category.id
+                ).length;
 
-            return (
-              <div
-                className="menu-category-row"
-                key={category.id}
-              >
-
-                <button
-                  type="button"
-                  className={`menu-category-button ${
-                    selectedCategory === category.id
-                      ? "active"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    setSelectedCategory(category.id)
-                  }
+              return (
+                <div
+                  className="menu-category-row"
+                  key={category.id}
                 >
 
-                  <span>
-                    {category.name}
-                  </span>
-
-                  <strong>
-                    {count}
-                  </strong>
-
-                </button>
-
-                <div className="menu-category-actions">
-
                   <button
                     type="button"
-                    className="menu-category-status"
+                    className={`menu-category-button ${
+                      selectedCategory ===
+                      category.id
+                        ? "active"
+                        : ""
+                    }`}
                     onClick={() =>
-                      handleToggleCategory(category)
-                    }
-                    title={
-                      category.is_active
-                        ? "Set inactive"
-                        : "Set active"
+                      setSelectedCategory(
+                        category.id
+                      )
                     }
                   >
-                    {category.is_active
-                      ? "ON"
-                      : "OFF"}
+
+                    <span>
+                      {category.name}
+                    </span>
+
+                    <strong>
+                      {count}
+                    </strong>
+
                   </button>
 
-                  <button
-                    type="button"
-                    className="menu-category-delete"
-                    onClick={() =>
-                      handleDeleteCategory(category)
-                    }
-                    title="Delete category"
-                  >
-                    ×
-                  </button>
+                  <div className="menu-category-actions">
+
+                    <button
+                      type="button"
+                      className="menu-category-status"
+                      onClick={() =>
+                        handleToggleCategory(
+                          category
+                        )
+                      }
+                      title={
+                        category.is_active
+                          ? "Set inactive"
+                          : "Set active"
+                      }
+                    >
+                      {category.is_active
+                        ? "ON"
+                        : "OFF"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="menu-category-delete"
+                      onClick={() =>
+                        handleDeleteCategory(
+                          category
+                        )
+                      }
+                      title="Delete category"
+                    >
+                      ×
+                    </button>
+
+                  </div>
 
                 </div>
-
-              </div>
-            );
-          })}
+              );
+            }
+          )}
 
         </aside>
 
@@ -743,7 +986,8 @@ export default function MenuManagement() {
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        name: event.target.value,
+                        name:
+                          event.target.value,
                       })
                     }
                     required
@@ -768,7 +1012,8 @@ export default function MenuManagement() {
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        price: event.target.value,
+                        price:
+                          event.target.value,
                       })
                     }
                     required
@@ -877,7 +1122,9 @@ export default function MenuManagement() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
-                    onChange={handleImageChange}
+                    onChange={
+                      handleImageChange
+                    }
                   />
 
                   <small>
@@ -907,7 +1154,9 @@ export default function MenuManagement() {
 
                   <input
                     type="checkbox"
-                    checked={form.is_available}
+                    checked={
+                      form.is_available
+                    }
                     onChange={(event) =>
                       setForm({
                         ...form,
@@ -960,7 +1209,8 @@ export default function MenuManagement() {
               <div>
 
                 <span className="menu-small-label">
-                  {selectedCategory === "all"
+                  {selectedCategory ===
+                  "all"
                     ? "ALL FOOD"
                     : getCategoryName(
                         selectedCategory
@@ -979,7 +1229,8 @@ export default function MenuManagement() {
 
             </div>
 
-            {filteredItems.length === 0 ? (
+            {filteredItems.length ===
+            0 ? (
 
               <div className="menu-empty">
 
@@ -1002,129 +1253,133 @@ export default function MenuManagement() {
 
               <div className="menu-food-list">
 
-                {filteredItems.map((item) => (
+                {filteredItems.map(
+                  (item) => (
 
-                  <article
-                    className="menu-food-item"
-                    key={item.id}
-                  >
+                    <article
+                      className="menu-food-item"
+                      key={item.id}
+                    >
 
-                    {/* IMAGE */}
+                      {/* IMAGE */}
 
-                    <div className="menu-food-image">
+                      <div className="menu-food-image">
 
-                      {item.image_url ? (
+                        {item.image_url ? (
 
-                        <img
-                          src={item.image_url}
-                          alt={item.name}
-                        />
+                          <img
+                            src={item.image_url}
+                            alt={item.name}
+                          />
 
-                      ) : (
+                        ) : (
 
-                        <span>
-                          🍽️
-                        </span>
+                          <span>
+                            🍽️
+                          </span>
 
-                      )}
-
-                    </div>
-
-                    {/* INFO */}
-
-                    <div className="menu-food-info">
-
-                      <div className="menu-food-title-row">
-
-                        <h3>
-                          {item.name}
-                        </h3>
-
-                        <strong>
-                          $
-                          {Number(
-                            item.price
-                          ).toFixed(2)}
-                        </strong>
+                        )}
 
                       </div>
 
-                      <span className="menu-food-category">
-                        {getCategoryName(
-                          item.category_id
+                      {/* INFO */}
+
+                      <div className="menu-food-info">
+
+                        <div className="menu-food-title-row">
+
+                          <h3>
+                            {item.name}
+                          </h3>
+
+                          <strong>
+                            $
+                            {Number(
+                              item.price
+                            ).toFixed(2)}
+                          </strong>
+
+                        </div>
+
+                        <span className="menu-food-category">
+                          {getCategoryName(
+                            item.category_id
+                          )}
+                        </span>
+
+                        {item.description && (
+                          <p>
+                            {item.description}
+                          </p>
                         )}
-                      </span>
 
-                      {item.description && (
-                        <p>
-                          {item.description}
-                        </p>
-                      )}
+                        <div className="menu-food-badges">
 
-                      <div className="menu-food-badges">
+                          <span
+                            className={
+                              item.is_available
+                                ? "badge-available"
+                                : "badge-unavailable"
+                            }
+                          >
+                            {item.is_available
+                              ? "Available"
+                              : "Unavailable"}
+                          </span>
 
-                        <span
-                          className={
-                            item.is_available
-                              ? "badge-available"
-                              : "badge-unavailable"
+                        </div>
+
+                      </div>
+
+                      {/* ACTIONS */}
+
+                      <div className="menu-food-actions">
+
+                        <a
+                          href={
+                            item.order_url ||
+                            DEFAULT_ORDER_URL
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          className="menu-action-view"
+                        >
+                          View
+                        </a>
+
+                        <button
+                          type="button"
+                          className="menu-action-edit"
+                          onClick={() =>
+                            startEdit(item)
                           }
                         >
-                          {item.is_available
-                            ? "Available"
-                            : "Unavailable"}
-                        </span>
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          className="menu-action-delete"
+                          onClick={() =>
+                            handleDelete(item)
+                          }
+                          disabled={
+                            deleting ===
+                            item.id
+                          }
+                        >
+                          {deleting ===
+                          item.id
+                            ? "..."
+                            : "Delete"}
+                        </button>
 
                       </div>
 
-                    </div>
+                    </article>
 
-                    {/* ACTIONS */}
-
-                    <div className="menu-food-actions">
-
-                      <a
-                        href={
-                          item.order_url ||
-                          DEFAULT_ORDER_URL
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                        className="menu-action-view"
-                      >
-                        View
-                      </a>
-
-                      <button
-                        type="button"
-                        className="menu-action-edit"
-                        onClick={() =>
-                          startEdit(item)
-                        }
-                      >
-                        Edit
-                      </button>
-
-                      <button
-                        type="button"
-                        className="menu-action-delete"
-                        onClick={() =>
-                          handleDelete(item)
-                        }
-                        disabled={
-                          deleting === item.id
-                        }
-                      >
-                        {deleting === item.id
-                          ? "..."
-                          : "Delete"}
-                      </button>
-
-                    </div>
-
-                  </article>
-
-                ))}
+                  )
+                )}
 
               </div>
 
